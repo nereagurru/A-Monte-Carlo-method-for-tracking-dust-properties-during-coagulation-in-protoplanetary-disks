@@ -1,0 +1,11 @@
+# FLAGS for execution; add # at the beginning of line to deactivate FLAG
+
+
+# turn on collisions
+CFLAGS+=-D COLLISIONS
+
+# do a Kernel test
+CFLAGS+=-D KERNEL_TEST
+
+# TEST1 constant; TEST2 linear; TEST3 product
+CFLAGS+=-D TEST1
