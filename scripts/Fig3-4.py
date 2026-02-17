@@ -7,12 +7,13 @@ Created on Mon Feb 16 20:44:21 2026
 """
 
 
-# script to reproduce figures 3 and 4 in the paper
+# script to reproduce figure 3 and 4 in the paper
 # fig 3, high_res=True
 # fig 4, high_res=False
 
 import numpy as np
 from scipy.special import gammaln
+from Plotting import init_plot
 import matplotlib.pyplot as plt
 import glob
 import os as os
@@ -25,54 +26,42 @@ high_res = True # if False, low resolution plot
 
 
 
-# this function is takes from dustpy:https://stammler.github.io/dustpy/test_analytical_coagulation_kernels.html
-def solution_constant_kernel(t, m, a, S0):
-    m0 = m[0]
-    N0 = S0 / m0
-    return N0 / m0 * 4./(a*N0*t)**2 * np.exp( (1.-m/m0) * 2/(a*N0*t) ) * m**2
-
-
-# from Tanaka & Nakazawa 1994, their eq. 2.2
-def solution_linear_kernel(t, m, a, S0):
-
-    m0 = m[0]
-    N0 = S0/(m0)**2
-    g = np.exp(-a*S0*t)
-    
-    k = (m / m0)
-    logN = np.log(N0 * g) - k * (1.0 - g) + (k - 1.0) * np.log(k * (1.0 - g)) - gammaln(k + 1.0)
-    N = np.exp(logN) 
-
-    return N*m**2
-
-
-# from Tanaka & Nakazawa 1994, their eq. 2.3
-def solution_product_kernel(t, mgrid):
-
-    logN = (mgrid - 1)*np.log(mgrid * t) -mgrid*t - gammaln(mgrid + 1.0) - np.log(mgrid)
-   
-    N = np.exp(logN) 
-    return mgrid**2*N
-
-
-
 class KernelType:
     
-    def __init__(self, function, res=True, ntot=10_000, mswrm=10.e20, m0=1., sim_num=5):
+    def __init__(self, function, res=True, mswrm=10.e20, m0=1.):
         self.function = function
-        self.ntot = ntot
+        
         self.mswrm = mswrm
         self.m0 = m0
-        self.file_names = []
         self.m2fm = None
         self.res = res
+
+        add_ = '_hr' if self.res else ''
+        
+        # read number of particles and how many times we repeated test
+        parfile = '../setups/' + 'kernel_'+function+ add_ +'/setup.par'
+        p = open(parfile, 'r')
+        for line in p:
+            s = line.split()
+            label = s[0]
+            if label == 'number_of_particles_per_cell':
+                self.ntot = float(s[1])
+            elif label == 'repeat_test':
+                self.sim_num = float(s[1])
+                self.sim_num = int(self.sim_num)
+        
+        self.file_names = []
+        
+        [self.file_names.append('kernel_'+function+ add_ + f'{i}') 
+                 for i in range(1, self.sim_num+1)]
+
+
         if function == 'constant':
             self.analytical_kernel = self._analytical_constant_kernel
             self.t_arr = np.array([1, 10, 100, 1_000, 10_000, 100_000])
             self.xlim = (1, 10**6)
             self.nbins = 250 if self.res else 120
             self.nord = np.log10(self.mswrm * self.ntot / self.m0)
-            self.sim_num = sim_num
             self.mgrid = np.empty((self.nbins+1,))
             self.mgrid[0] = self.m0
             self.nord = np.log10(self.mswrm * self.ntot / self.m0)  # how many orders of magnitude in mass should the histogram go through?
@@ -88,7 +77,6 @@ class KernelType:
             self.xlim = (1, 10**10)
             self.nbins = 150 if self.res else 50
             self.nord = np.log10(self.mswrm * self.ntot / self.m0)
-            self.sim_num = sim_num
             self.mgrid = np.empty((self.nbins+1,))
             self.mgrid[0] = self.m0
 
@@ -101,26 +89,40 @@ class KernelType:
                lll = ll * i
         elif function == 'product':
             self.analytical_kernel = self._analytical_product_kernel
-            self.t_arr = np.array([0.4002, 0.7, 0.9])
+            self.t_arr = np.array([0.4, 0.7, 0.9])
             self.xlim = (1, 10**3)
             self.nbins = 30  if self.res else 10
             self.nord = 3
             self.mgrid = np.logspace(np.log10(self.m0), self.nord,
                                      self.nbins+1).astype(int)
-            self.sim_num = sim_num
         else:
             raise ValueError(f'Unknown kernel type: {function}')
         
         self.mgrid_mid = np.sqrt(self.mgrid[:-1] * self.mgrid[1:] )
 
-    def _analytical_constant_kernel(self, t, m, a=1., S0=1.):
-        return solution_constant_kernel(t, m, a, S0)
+    # from Tanaka & Nakazawa 1994, their eq. 2.1
+    def _analytical_constant_kernel(self, t, m, a=1.):
+        m0 = m[0]
+        N0 = 1./m0
+        N = N0/m0*4./(a*N0*t)**2 *np.exp((1.-m/m0)*2/(a*N0*t))
+        return N*m**2
+
+    # from Tanaka & Nakazawa 1994, their eq. 2.2
+    def _analytical_linear_kernel(self, t, m, a=0.5):
+        m0 = m[0]
+        N0 = 1./m0**2
+        g = np.exp(-a*t)
+        k = (m / m0)
+        logN = np.log(N0*g) - k*(1.-g) + (k-1.)*np.log(k*(1.-g)) - gammaln(k+1.)
+        N = np.exp(logN) 
+        return N*m**2
+
     
-    def _analytical_linear_kernel(self, t, m, a=0.5, S0=1.):
-        return solution_linear_kernel(t, m, a, S0)
-    
+    # from Tanaka & Nakazawa 1994, their eq. 2.3
     def _analytical_product_kernel(self, t, m):
-        return solution_product_kernel(t, m)
+        logN = (m-1)*np.log(m*t) - m*t - gammaln(m+1.) - np.log(m)
+        N = np.exp(logN) 
+        return N*m**2
     
     def compute_m2fm(self):
         if len(self.file_names) == 0:
@@ -135,8 +137,8 @@ class KernelType:
                 with h5py.File(all_files[file_id], 'r') as f:
                     dset = f['swarms/swarmsout']
                     swarmlist = dset[...]  # Load the whole array
-                    # Read compound dataset from swarms/swarmsout
                     
+                    # Read compound dataset from swarms/swarmsout
                     npar_arr = swarmlist['npar'][...][0]
                     mass_arr = swarmlist['mass of a particle [g]'][0]
     
@@ -160,19 +162,11 @@ class KernelType:
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 sim_list = ['constant', 'linear', 'product']
+
 kernel_list = []
+[kernel_list.append(KernelType(sim, res=high_res)) for i, sim in enumerate(sim_list)]
+    
 
-for i, sim in enumerate(sim_list):
-    if high_res:
-        kernel = KernelType(sim)
-        [kernel.file_names.append('kernel_'+sim+f'_hr{i}') 
-         for i in range(1, kernel.sim_num+1)]
-    else:
-
-        kernel = KernelType(sim, res=high_res, ntot=200, sim_num=10)
-        [kernel.file_names.append('kernel_'+sim+f'{i}') 
-         for i in range(1, kernel.sim_num+1)]
-    kernel_list.append(kernel)
 fig, ax = plt.subplots(1, 3, figsize=(50,15), sharey=True)
 lw = 3
 
@@ -191,8 +185,6 @@ for i, axx in enumerate(ax):
     axx.set_xscale('log')
 
 
-    #if i==0:
-    #    fig.suptitle(f'N={ntot}')
     kernel.compute_m2fm()
     start = 1
     for it, time in enumerate(kernel.t_arr):
@@ -210,7 +202,7 @@ for i, axx in enumerate(ax):
 
 
 fig.subplots_adjust(wspace=0.15, hspace=0.1, top=0.85, right=0.77)
-plt.show()
+
 if high_res:
     fig.savefig('kernel_highres.pdf', dpi=400, bbox_inches='tight', format='pdf')
 else:
