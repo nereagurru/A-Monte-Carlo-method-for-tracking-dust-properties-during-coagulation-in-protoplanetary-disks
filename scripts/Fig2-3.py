@@ -7,7 +7,7 @@ Created on Mon Feb 16 20:44:21 2026
 """
 
 
-# script to reproduce figure 3 and 4 in the paper
+# script to reproduce figure 2 and 3 in the paper
 # fig 3, high_res=True
 # fig 4, high_res=False
 
