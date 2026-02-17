@@ -1,0 +1,11 @@
+# FLAGS for execution; add # at the beginning of line to deactivate FLAG
+
+# turn on collisions
+CFLAGS+=-D COLLISIONS
+
+#write some auxiliary data
+CFLAGS+=-D AUXDATA
+
+# add two components
+CFLAGS+=-D MULTI_COMPONENT
+
