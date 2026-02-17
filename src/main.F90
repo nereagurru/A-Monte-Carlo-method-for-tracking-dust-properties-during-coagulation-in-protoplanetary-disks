@@ -1,0 +1,249 @@
+! Authors: Joanna Drążkowska, Vignesh Vaikundaraman, Nerea Gurrutxaga
+! Max Planck Institute for Solar System Research, Göttingen, Germany
+!
+! This code performs a 2D simulation of dust evolution in a protoplanetary disk.
+! The gas disk is an input and is not evolved by mcdust (discstruct module)
+! The dust is treated as representative particles (RPs) undergoing advection (advection module)
+! as well as collisions performed with Monte Carlo algorithm (collisions module)
+! To perform collisions the RPs are binned using an adaptive grid (grid module)
+!
+! citations: Drążkowska, Windmark & Dullemond (2013) A&A 556, A37, Vaikundaraman et al. (2025, submitted to JOSS)
+!
+! This code is licensed under the GNU General Public License v3
+!
+program main
+   use constants
+   use advection,    only: mc_advection, update_St
+#ifdef KERNEL_TEST
+   use collisions,   only : mc_collisions_test
+#else
+   use collisions,   only: mc_collisions
+#endif
+   use grid,         only: g, make_grid, deallocate_grid
+   use initproblem,  only: init_swarms, init_random_seed, m0
+   use discstruct,   only: cs, omegaK, gasmass
+   use parameters,   only: read_parameters, Ntot, nz, nr, dtime, fout, tend, smallr, restart, &
+                           maxrad0, r0, db_data, path, dtg
+#ifdef MULTI_COMPONENT
+   use parameters, only: matdensw, matdenssi
+   use phase_change
+   use discstruct, only: Temp, sigmag
+#else
+   use parameters, only: matdens
+#endif
+   use timestep,     only: time_step
+   use types
+   use hdf5
+   use hdf5output, only: hdf5_file_write, hdf5_file_t, hdf5_file_read
+
+   implicit none
+
+   ! the array of the representative particles (swarms) is declared here:
+   type(swarm), dimension(:), allocatable, target                  :: swrm        ! list of all swarms in the simulation
+   type(list_of_swarms), dimension(:,:), allocatable, target       :: bin         ! swarms binned into cells
+   type(list_of_swarms), dimension(:), allocatable                 :: rbin        ! swarms binned into radial zones
+   type(hdf5_file_t)                                               :: file
+   real                       :: total
+   real(kind=4), dimension(2) :: elapsed
+
+   integer             :: i, j, iter
+   real                :: time = 0.0          ! physical time
+   real                :: timeofnextout = 0.0 ! time of next output
+   real                :: resdt = 0.1*year               ! resulting physical time step
+   integer             :: nout = 0            ! number of the next output
+   real                :: totmass             ! total mass of dust beyond evaporation line
+   character(len=100)  :: ctrl_file           ! parameter file
+   integer, dimension(:,:), allocatable :: ncolls
+#ifdef MULTI_COMPONENT
+   ! related to water
+   real :: vapour_mass, rhovap, temper, evap_cond, con_timescale, time_init
+#endif
+
+   ! random number generator initialization
+   call init_random_seed
+
+   ! reading parameters and initializing the simulation
+   call get_command_argument(1, ctrl_file)
+   write(*,*) 'mcdust v1.0'
+   write(*,*) '------------------------------------------------------------------'
+   write(*,*) 'Reading parameters...'
+   call read_parameters(ctrl_file)
+   write(*,*) '------------------------------------------------------------------'
+   write(*,*) 'Initializing representative bodies...'
+#ifdef RESTART
+      write(*,*) ' Reading restart...'
+      call hdf5_file_read(Ntot, swrm, nout, time, resdt)
+      do i=1,size(swrm)
+         swrm(i)%npar = swrm(i)%mswarm/swrm(i)%mass
+      enddo
+      write(*,*) time, nout
+      write(*,*) '  restart read!'
+      timeofnextout = time + dtime
+#ifdef MULTI_COMPONENT
+      m0 = 4. * third * pi * r0**3 * matdensw
+#else
+      m0 = 4. * third * pi * r0**3 * matdens
+#endif
+#else
+
+      call init_swarms(Ntot,swrm)
+
+#endif
+   write(*,*) 'succeed'
+
+   write(*,*) 'Initial disk mass: ', gasmass(0.1*AU,maxrad0*AU,0.0)/Msun
+
+   write(*,*) ' Making grid for the first time...'
+
+   call make_grid(swrm, bin, rbin, nr, nz, smallr,totmass, ncolls)
+
+   write(*,*) '  grid done'
+
+
+   ncolls(:,:) = 1
+#ifdef KERNEL_TEST
+   time = 0
+   resdt = 0
+   call mc_collisions_test(1, 1, bin, swrm, resdt, time, ncolls(1,1), rbin(1)%first_idx)
+   write(*,*) 'Done'
+#else
+   write(*,*) 'going into the main loop...'
+#ifdef MULTI_COMPONENT
+   ! vapour mass init
+     vapour_mass = sum(swrm(:)%mswarm)
+     write(*,*) 'Vapour mass is ', vapour_mass
+#endif
+   iter = 0
+   ! ------------------- MAIN LOOP -------------------------------------------------------------------------------------
+   do while (time < tend)
+
+      ! determining the time step
+      if (iter == 0) then 
+         resdt = 1./omegaK(minval(swrm(:)%rdis))
+      else
+         call time_step(bin, ncolls, timeofnextout-time, resdt)
+      end if
+      write(*,*) 'time of simulation... ', time/year, ' with timestep ', resdt/year
+
+      ! producing output
+      if (modulo(iter,fout) == 0 .or. time>=timeofnextout) then
+         call update_St(swrm, time) ! update Stokes number; it will later be update during advection too
+         call hdf5_file_write(file, swrm, time, nout, resdt)
+         write(*,*) 'Time: ', time/year, 'produced output: ',nout
+         open(23,file=trim(path)//trim('/timesout.dat'),status='unknown',position='append')
+         write(23,*) 'time: ', time/year, 'produced output: ',nout
+         close(23)
+         timeofnextout = time+dtime
+         nout = nout + 1
+      endif
+
+      iter = iter + 1
+
+      ! writing max mass value for each timestep for bug fixes
+#ifdef AUXDATA
+         open(123,file=trim(path)//trim('/mmax.dat'),position='append')
+         write(123,*) time/year, maxval(swrm(:)%mass)
+         close(123)
+#endif
+
+
+#ifdef MULTI_COMPONENT
+      ! condensation (if sublimation has occurred)
+      temper = Temp(g%rce(1), time)
+      rhovap = mH2O/kB/temper*1.013*10.**6.*exp(15.6-5940./temper)
+      evap_cond = (vapour_mass/g%vol(1,1)-rhovap)
+      !write(*,*) 'evap_cond is ', evap_cond
+
+      ! condensation timescale from Ros and Johansen 2013, their equation 12. We assume micrometer-sized silicate monomers
+      con_timescale = sqrt(2.*pi*18./2.3)*matdenssi/sigmag(g%rce(1), time)/dtg/omegaK(g%rce(1))*r0
+      write(*,*) 'condensation timescale is ', con_timescale/year
+      write(*,*) 'Total water content before phase change.... ', vapour_mass + sum(swrm(:)%mswarm*swrm(:)%w)
+      time_init = time
+      if (con_timescale<resdt) then
+         do 
+            if (evap_cond > 0.) then 
+               call condensation(swrm, con_timescale, vapour_mass, rhovap, temper, g%vol(1,1))
+            else if (evap_cond < 0.) then 
+               call sublimation(swrm, con_timescale, vapour_mass, rhovap, temper, g%vol(1,1))
+            endif
+            if (time_init+con_timescale>time+resdt) exit
+            time_init = time_init + con_timescale
+         enddo
+      endif
+
+      if (evap_cond > 0.) then 
+         call condensation(swrm, time+resdt-time_init, vapour_mass, rhovap, temper, g%vol(1,1))
+
+      else if (evap_cond < 0.) then 
+         call sublimation(swrm,  time+resdt-time_init, vapour_mass, rhovap, temper, g%vol(1,1))
+
+      endif
+      write(*,*) 'Total water content after phase change.... ', vapour_mass + sum(swrm(:)%mswarm*swrm(:)%w)
+
+
+#endif
+
+#ifdef TRANSPORT
+      write(*,*) ' Performing advection: timestep',resdt/year,'yrs'
+#ifdef AUXDATA
+      open(23,file=trim(path)//trim('/timestep.dat'),status='unknown',position='append')
+      write(23,*) time/year,resdt/year
+      close(23)
+#endif
+
+      ! performing advection
+      call mc_advection(swrm, resdt, time)
+      write(*,*) '  advection done'
+#endif
+
+#ifdef COLLISIONS
+      ! removing old grid and building new one
+      call deallocate_grid
+      if (allocated(bin))  deallocate(bin)
+      if (allocated(rbin)) deallocate(rbin)
+      if (allocated(ncolls)) deallocate(ncolls)
+      write(*,*) '    Making grid...'
+      call make_grid(swrm, bin, rbin, nr, nz, smallr,totmass, ncolls)
+      write(*,*) '     grid done'
+
+
+      !write(*,*) 'Initial mass is ', sum(swrm(:)%mswarm)
+      !$OMP PARALLEL DO PRIVATE(i,j) SCHEDULE(DYNAMIC)
+      do i = 1, size(g%rce)
+         do j = 1, size(g%zce,dim=2)
+            if (.not.allocated(bin(i, j)%p)) cycle
+            call mc_collisions(i, j, bin, swrm, resdt, time, ncolls(i,j), rbin(i)%first_idx)
+         enddo
+      enddo
+      !$OMP END PARALLEL DO
+
+      open(123,file=trim(path)//trim('/coll.dat'),position='append')
+      write(123,*) time/year, sum(ncolls)
+      close(123)
+      write(*,*) '    collisions done!'
+#endif
+      time = time + resdt
+
+   enddo
+   ! ---- END OF THE MAIN LOOP -----------------------------------------------------------------------------------------
+#endif
+
+   open(23,file=trim(path)//trim('/timesout.dat'),status='unknown',position='append')
+   write(23,*) 'time: ', time/year, 'produced output: ',nout
+   close(23)
+#if !defined(KERNEL_TEST)
+   call update_St(swrm, time)
+   call hdf5_file_write(file, swrm, time, nout, resdt)
+#endif
+   
+   deallocate(bin)
+   deallocate(rbin)
+
+   write(*,*) '------------------------------------------------------------------'
+   write(*,*) 'tend exceeded, finishing simulation...'
+
+   ! this causes problems when used with intel compilers, so just remove it in case you want to use one
+   total = etime(elapsed)
+   write(*,*) 'Elapsed time [s]: ', total, ' user:', elapsed(1), ' system:', elapsed(2)
+
+end
