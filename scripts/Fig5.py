@@ -5,7 +5,7 @@ Created on Tue Feb 17 11:16:13 2026
 
 @author: gurrutxaga
 """
-# script to reproduce figure 6 in the paper
+# script to reproduce Figure 5 in the paper
 import numpy as np
 from Plotting import init_plot
 import matplotlib.pyplot as plt
