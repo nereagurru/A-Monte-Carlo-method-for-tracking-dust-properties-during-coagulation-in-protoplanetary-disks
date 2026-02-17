@@ -184,7 +184,7 @@ use parameters, only: repeat, path, datadir
                swarms(w)%fw = swarms(w)%fw*weightw + swarms(nrk)%fw*weightk
                swarms(w)%w = swarms(w)%fw/(1.-swarms(w)%fw)
                swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm 
-               swarms(w)%mass = swarms(w)%mswarm*(1.+swarms(nrk)%w)/swarms(w)%npar
+               swarms(w)%mass = swarms(w)%mswarm*(1.+swarms(w)%w)/swarms(w)%npar
 #else
                !swarms(w)%rdis = swarms(w)%rdis*weightw + swarms(nrk)%rdis*weightk
                !swarms(w)%zdis = swarms(w)%zdis*weightw + swarms(nrk)%zdis*weightk
