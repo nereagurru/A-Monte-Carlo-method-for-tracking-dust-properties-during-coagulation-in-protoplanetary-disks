@@ -1,0 +1,17 @@
+# FLAGS for execution; add # at the beginning of line to deactivate FLAG
+
+# turn on dust transport
+CFLAGS+=-D TRANSPORT
+
+# vertical settling
+CFLAGS+=-D VERSETTLING
+
+# include radial drift
+CFLAGS+=-D RADRIFT
+
+# turn on collisions
+CFLAGS+=-D COLLISIONS
+
+#write some auxiliary data
+CFLAGS+=-D AUXDATA
+
