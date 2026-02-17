@@ -18,8 +18,8 @@ fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(15, 15))
 init_plot(ax, None, ylabel='mean ice fraction', xlabel='time [yr]')
 
 
-path_list = ['/scratch/gurrutxaga/2DMC/mcdust/outputs/water_again_more/',
-             '/scratch/gurrutxaga/2DMC/mcdust_original/outputs/water_again_more/']
+path_list = ['../outputs/water/',
+             '../outputs/water_mcdust/']
 ntot = 1000
 for i, (path, label) in enumerate(zip(path_list, ['This work', 'Z&D08'])):
     all_files = sorted(glob.glob(os.path.join(path, "*.h5")))
