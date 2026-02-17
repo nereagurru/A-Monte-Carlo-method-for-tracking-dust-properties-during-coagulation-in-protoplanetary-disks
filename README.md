@@ -1,5 +1,6 @@
 # A-Monte-Carlo-method-for-tracking-dust-properties-during-coagulation-in-protoplanetary-disks
-This code is provided to reproduce the plots in the paper "A Monte Carlo method for tracking dust properties during coagulation in protoplanetary disks"
+This code is provided to reproduce the plots in the paper "A Monte Carlo method for tracking dust properties during coagulation in protoplanetary disks".
+This code is a modified version from the mcdust code https://github.com/vicky1997/mcdust 
 
 
 This readme file was generated on 2026-02-16 by Nerea Gurrutxaga
