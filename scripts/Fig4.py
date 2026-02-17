@@ -6,7 +6,7 @@ Created on Tue Feb 17 11:46:14 2026
 @author: gurrutxaga
 """
 
-# script to reproduce figure 6 in the paper
+# script to reproduce Figure 4 in the paper of global disk
 
 import numpy as np
 from Plotting import init_plot
@@ -40,10 +40,10 @@ rlogwalls = np.logspace(np.log10(1.),
 rlogcents = np.sqrt(rlogwalls[1:]*rlogwalls[:-1])
 drlog = rlogwalls[1:]-rlogwalls[:-1]
 
-path_list = ['/scratch/gurrutxaga/2DMC/mcdust_original/outputs/global_disk_again/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_again_X1/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_again_X2/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_again_X3/']
+path_list = ['../outputs/global_disk_mcdust/',
+             '../outputs/global_disk_X1/',
+             '../outputs/global_disk_X2/',
+             '../outputs/global_disk_X3/']
 
 
 
