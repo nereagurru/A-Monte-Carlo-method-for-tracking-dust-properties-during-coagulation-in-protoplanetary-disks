@@ -9,7 +9,7 @@ maximum_radius_[AU]                       100.
 monomer_radius_[cm]                       1.e-4
 material_density_[g/cm3]                  1.2
 dmmax                                     0.01
-tolerance                                 0.01
+merging_parameter_X                       0.01
 evaporation_radius_[AU]                   0.99
 dust_to_gas_ratio                         0.01
 fragmentation_velocity_[cm/s]             1000.
