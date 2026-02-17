@@ -66,6 +66,7 @@ global_disk_X2/
 global_disk_X3/
 
 Example of how to run it:
+
 make mcdust SETUP_FILE=global_disk_mcdust
 run global_disk_mcdust setups/global_disk_mcdust/setup.par
 
@@ -80,6 +81,7 @@ water_mcdust/
 water/
 
 Example of how to run it:
+
 make mcdust SETUP_FILE=water_mcdust
 run water_mcdust setups/water_mcdust/setup.par
 
