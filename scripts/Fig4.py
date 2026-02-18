@@ -65,7 +65,7 @@ for i_plot, (path, ax) in enumerate(zip(path_list,axx.flatten())):
         rdis = np.array(swarmlist['cylindrical radius [AU]'])[0,:]
         mass = np.array(swarmlist['mass of a particle [g]'])[0,:]
 
-        # density is 1g/cm**3
+        # internal density of dust is 1g/cm**3
         grain_size = (0.75/np.pi*mass)**(1./3.)
         # Read compound dataset from swarms/swarmsout
         if i_plot == 0:
