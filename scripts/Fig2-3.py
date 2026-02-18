@@ -7,7 +7,7 @@ Created on Mon Feb 16 20:44:21 2026
 """
 
 
-# script to reproduce figure 2 and 3 in the paper
+# script to reproduce Figures 2 and 3 in the paper
 # fig 3, high_res=True
 # fig 4, high_res=False
 
@@ -113,6 +113,8 @@ class KernelType:
         N0 = 1./m0**2
         g = np.exp(-a*t)
         k = (m / m0)
+        
+        # compute it with logarithm because large numbers give numerical problems
         logN = np.log(N0*g) - k*(1.-g) + (k-1.)*np.log(k*(1.-g)) - gammaln(k+1.)
         N = np.exp(logN) 
         return N*m**2
@@ -120,6 +122,7 @@ class KernelType:
     
     # from Tanaka & Nakazawa 1994, their eq. 2.3
     def _analytical_product_kernel(self, t, m):
+        # compute it with logarithm because large numbers give numerical problems
         logN = (m-1)*np.log(m*t) - m*t - gammaln(m+1.) - np.log(m)
         N = np.exp(logN) 
         return N*m**2
@@ -152,7 +155,7 @@ class KernelType:
                         j = np.searchsorted(self.mgrid, m, side="right") - 1
                         # skip particles outside the grid
                         if j>self.mgrid.shape[0]-2: continue
-                        # logarithmic bin width
+
                         dm = self.mgrid[j+1] - self.mgrid[j]
                         self.m2fm[j, file_id, sim] += w * m**2 / dm  
         self.m2fm /= (self.mswrm*self.ntot)
