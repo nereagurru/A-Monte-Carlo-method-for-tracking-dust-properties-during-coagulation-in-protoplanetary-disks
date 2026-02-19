@@ -58,7 +58,7 @@ Example of how to run it:
 make SETUP_FILE=kernel_constant
 run kernel_constant setups/kernel_constant/setup.par
 
-Run script/Fig3-4.py to reproduce Figures 3 and 4
+Run script/Fig2-3.py to reproduce Figures 2 and 3
 
 ### Global simulation test: 
 These simulations test the validity of the algorithm in a global protoplanetary disk. We test the original mcdust versus the algorithm presented here with three different values of the merging parameter X=0.1, 0.01, 0.001. The setup files of the four different simulations:
@@ -75,7 +75,7 @@ run global_disk_mcdust setups/global_disk_mcdust/setup.par
 - make SETUP_FILE=global_disk_X1
 run global_disk_X1 setups/global_disk_X1/setup.par
 
-Run script/Fig5.py to reproduce Figure 5
+Run script/Fig4.py to reproduce Figure 4
 
 ### Conservation of the global budget test: 
 This simulation tests the validity of the algorithm for conserving the global budget of dust properties. The setup file of the simulation:
@@ -90,5 +90,5 @@ run water_mcdust setups/water_mcdust/setup.par
 - make SETUP_FILE=water
 run water setups/water/setup.par
 
-Run script/Fig6.py to reproduce Figure 6
+Run script/Fig5.py to reproduce Figure 5
 
