@@ -1,0 +1,1 @@
+Here, the code will create directories for each simulation to save *.o and *.mod files. They will be deleted when doing "make clean SETUP_FILE=<name_of_sim>".
