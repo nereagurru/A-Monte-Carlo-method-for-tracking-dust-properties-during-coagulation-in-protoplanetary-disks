@@ -10,7 +10,7 @@ This readme file was generated on 2026-02-16 by Nerea Gurrutxaga
 Title of code: Monte Carlo code to track dust properties
 Description: This code calculates the dust evolution of particles, conserving the global inventory of dust properties
 
-Author Information
+Corresponding Author Information
 Name: Nerea Gurrutxaga
 ORCID: 0009-0008-3256-9564
 Institution: Max Planck Institute for Solar System Research
