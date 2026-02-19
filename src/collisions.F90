@@ -180,15 +180,12 @@ use parameters, only: repeat, path, datadir
 #endif
                swarms(w)%npar = swarms(w)%npar + swarms(nrk)%npar
 #ifdef MULTI_COMPONENT
-               ! multicomponent is 0D so we do not update position
                swarms(w)%fw = swarms(w)%fw*weightw + swarms(nrk)%fw*weightk
                swarms(w)%w = swarms(w)%fw/(1.-swarms(w)%fw)
                swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm 
                swarms(w)%mass = swarms(w)%mswarm*(1.+swarms(w)%w)/swarms(w)%npar
 #else
-               !swarms(w)%rdis = swarms(w)%rdis*weightw + swarms(nrk)%rdis*weightk
-               !swarms(w)%zdis = swarms(w)%zdis*weightw + swarms(nrk)%zdis*weightk
-               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm ! this is not best practise, because they are large numbers
+               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm
                swarms(w)%mass = swarms(w)%mswarm/swarms(w)%npar
 
                
@@ -234,17 +231,15 @@ use parameters, only: repeat, path, datadir
             idnr = swarms(nrk)%idnr
             swarms(imax)%npar = swarms(imax)%npar/2.
             swarms(imax)%mswarm = swarms(imax)%mswarm/2.
-            ! copy i in k
-!#ifdef MULTI_COMPONENT
+            
+            ! copy imax in nrk, except position (grid is assumed to be local)
             rpos = swarms(nrk)%rdis
             zpos = swarms(nrk)%zdis
-!#endif
             swarms(nrk) = swarms(imax) 
             swarms(nrk)%idnr = idnr
-!#ifdef MULTI_COMPONENT
             swarms(nrk)%rdis = rpos
             swarms(nrk)%zdis = zpos
-!#endif
+
             ! then we need to calculate all properties but if this was the case we could do it once. To do
             call stokes_nr_centr(imax, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
             call vel_vs_centr(nr, ni, imax, stokesnr, Kepler_freq, vs)
