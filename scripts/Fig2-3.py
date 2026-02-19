@@ -145,7 +145,6 @@ class KernelType:
                     npar_arr = swarmlist['npar'][...][0]
                     mass_arr = swarmlist['mass of a particle [g]'][0]
     
-                    print(file_id)
                     for i in range(0, mass_arr.shape[0]):
                     
                         m = mass_arr[i]
