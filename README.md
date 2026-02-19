@@ -21,7 +21,7 @@ Corresponding Author Information
 
 Data of the paper is available in Zenodo. 
 - doi: 10.5281/zenodo.18673340
-- link: https://zenodo.org/uploads/18673340
+- link: https://zenodo.org/records/18673340
 
 ## FILE OVERVIEW
 
