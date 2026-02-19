@@ -11,19 +11,19 @@ Title of code: Monte Carlo code to track dust properties
 
 Description: This code calculates the dust evolution of particles, conserving the global inventory of dust properties
 
-Corresponding Author Information
+Corresponding Author
 - Name: Nerea Gurrutxaga
 - ORCID: 0009-0008-3256-9564
 - Institution: Max Planck Institute for Solar System Research
 - Email: gurrutxaga@mps.mpg.de
 
 
-  Coauthors
+Coauthor 
 - Name: Vignesh Vaikundaraman
 - ORCID: 0000-0002-2451-9574
 - Institution: Max Planck Institute for Solar System Research
 
-
+Coauthor 
 - Name: Joanna Drazkowska
 - ORCID: 0000-0002-9128-0305
 - Institution: Max Planck Institute for Solar System Research
