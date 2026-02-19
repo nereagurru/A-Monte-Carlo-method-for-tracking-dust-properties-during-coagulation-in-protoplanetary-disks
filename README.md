@@ -19,7 +19,9 @@ Email: gurrutxaga@mps.mpg.de
 
 ## SHARING/ACCESS Code
 
-Data of the paper is available in Zenodo:
+Data of the paper is available in Zenodo. 
+doi: 10.5281/zenodo.18673340
+link: https://zenodo.org/uploads/18673340
 
 ## FILE OVERVIEW
 
