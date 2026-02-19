@@ -80,11 +80,9 @@ global_disk_X3/
 
 Example of how to run it:
 
-- make mcdust SETUP_FILE=global_disk_mcdust
-run global_disk_mcdust setups/global_disk_mcdust/setup.par
+- make mcdust SETUP_FILE=global_disk_mcdust; run global_disk_mcdust setups/global_disk_mcdust/setup.par
 
-- make SETUP_FILE=global_disk_X1
-run global_disk_X1 setups/global_disk_X1/setup.par
+- make SETUP_FILE=global_disk_X1; run global_disk_X1 setups/global_disk_X1/setup.par
 
 Run script/Fig4.py to reproduce Figure 4
 
@@ -95,12 +93,10 @@ water/
 
 Example of how to run it:
 
-- make mcdust SETUP_FILE=water_mcdust
--run water_mcdust setups/water_mcdust/setup.par
+- make mcdust SETUP_FILE=water_mcdust; run water_mcdust setups/water_mcdust/setup.par
 
 
-- make SETUP_FILE=water
-- run water setups/water/setup.par
+- make SETUP_FILE=water; run water setups/water/setup.par
 
 Run script/Fig5.py to reproduce Figure 5
 
