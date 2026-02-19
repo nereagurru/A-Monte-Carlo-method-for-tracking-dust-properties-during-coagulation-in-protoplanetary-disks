@@ -484,10 +484,9 @@ use parameters, only: repeat, path, datadir
                   ! find most similar particle to nrk
                   w = minloc(abs(swarms(:)%mass-swarms(nrk)%mass), dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
                   ! merge (not collide, compute average)
-                  swarms(w)%mass = (swarms(w)%mass*swarms(w)%mswarm + swarms(nrk)%mass*swarms(nrk)%mswarm)/&
-                                 & (swarms(w)%mswarm+swarms(nrk)%mswarm)
-                  swarms(w)%npar = (swarms(w)%mswarm + swarms(nrk)%mswarm)/swarms(w)%mass
-                  swarms(w)%mswarm = swarms(w)%mass*swarms(w)%npar
+                  swarms(w)%mswarm = swarms(w)%mswarm + swarms(nrk)%mswarm
+                  swarms(w)%npar = swarms(w)%npar  + swarms(nrk)%npar 
+                  swarms(w)%mass = swarms(w)%mswarm/swarms(w)%npar
                   swarms(w)%coll_f =  1 ! we want this particle to update as well
                   swarms(nrk)%mass = 0.
                   swarms(nrk)%npar = 0.
