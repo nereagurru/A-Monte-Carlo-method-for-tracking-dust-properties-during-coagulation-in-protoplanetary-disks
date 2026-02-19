@@ -16,6 +16,14 @@ Corresponding Author Information
 - Institution: Max Planck Institute for Solar System Research
 - Email: gurrutxaga@mps.mpg.de
 
+  Coauthors
+- Name: Vignesh Vaikundaraman
+- ORCID: 0000-0002-2451-9574
+- Institution: Max Planck Institute for Solar System Research
+
+- Name: Joanna Drazkowska
+- ORCID: 0000-0002-9128-0305
+- Institution: Max Planck Institute for Solar System Research
 
 ## SHARING/ACCESS Code
 
