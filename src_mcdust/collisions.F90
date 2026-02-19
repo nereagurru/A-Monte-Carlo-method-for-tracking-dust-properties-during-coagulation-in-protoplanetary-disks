@@ -297,8 +297,7 @@ module collisions
 #endif
       ! adaptive dmmax
       where(swarms(:)%mass/swarms(nl)%mass < dmmax)
-         !accelncol(nl,:) = max(colrates(nl,:)*min(deltar/abs(swarms(nl)%velr),deltaz/abs(swarms(nl)%velz)), 1.)
-         accelncol(nl,:) = swarms(nl)%mass*dmmax/swarms(:)%mass !min(accelncol(nl,:), swarms(nl)%mass*dmmax/swarms(:)%mass)
+         accelncol(nl,:) = swarms(nl)%mass*dmmax/swarms(:)%mass
       elsewhere
          accelncol(nl,:) = 1.
       endwhere
@@ -330,7 +329,7 @@ module collisions
       colrates(:,nl) = swarms(nl)%npar * relvels(nl,:) * con1 * (swarms(nl)%mass**third + swarms(:)%mass**third)**2./vol
 #endif
       where(swarms(nl)%mass/swarms(:)%mass < dmmax)
-         accelncol(:,nl) = min(accelncol(:,nl), swarms(:)%mass * dmmax / swarms(nl)%mass)
+         accelncol(:,nl) = swarms(:)%mass * dmmax / swarms(nl)%mass
       elsewhere
          accelncol(:,nl) = 1.
       endwhere
