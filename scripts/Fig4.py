@@ -26,8 +26,11 @@ au = u.au.to(u.cm)
 width=30.
 
 sigMax = 2.
-sigMin = -5.
+sigMin = -7.
 levels = np.arange(sigMin, sigMax, 1)
+colors = plt.cm.magma_r(np.linspace(0, 1, len(levels)-1))
+colors[0] = [1, 1, 1, 1]
+cmap = mpl.colors.ListedColormap(colors)
 
 size_walls = np.logspace(np.log10(10**(-4)),
                      np.log10(20), nmbins+1)
@@ -95,7 +98,7 @@ for i_plot, (path, ax) in enumerate(zip(path_list,axx.flatten())):
     # Contour plot for second subplot
 
     pcf = ax.contourf(rlogcents / au, size_cents, np.log10(mdens1.T),
-                      levels=levels, extend="both", cmap="magma_r")
+                      levels=levels, extend="both", cmap=cmap)
 
     if i_plot==0:
         # Axes settings
