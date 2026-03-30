@@ -54,6 +54,7 @@ program main
 #ifdef MULTI_COMPONENT
    ! related to water
    real :: vapour_mass, rhovap, temper, evap_cond, con_timescale, time_init
+   real :: vol_0D
 #endif
    ! random number generator initialization
    call init_random_seed
@@ -83,11 +84,15 @@ program main
 #endif
       nord = (log10(mswarm/m0))
 #else
-      call init_swarms(Ntot,swrm)
+      call init_swarms(Ntot,swrm &
+#ifdef MULTI_COMPONENT
+                        &, vol_0D &
+#endif
+                        &)
 #endif
    write(*,*) 'succeed'
 
-   write(*,*) 'Initial disk mass: ', gasmass(0.1*AU,maxrad0*AU,0.0)/Msun
+
 
    write(*,*) ' Making grid for the first time...'
    call make_grid(swrm, bin, rbin, nr, nz, smallr,totmass, ncolls)
@@ -97,6 +102,7 @@ program main
    
    write(*,*) 'going into the main loop...'
 #ifdef MULTI_COMPONENT
+   g%vol(1,1) = vol_0D
    ! vapour mass init
    vapour_mass = real(size(swrm(:)%rdis))*mswarm
    write(*,*) 'Vapour mass is ', vapour_mass
