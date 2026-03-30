@@ -144,7 +144,6 @@ module advection
       real                                            :: Hg
       real, intent(in)                                :: realtime
 
-
       Hg = cs(particle%rdis) / omegaK(particle%rdis)
       Hd = Hg * (alpha(particle%rdis) / (alpha(particle%rdis)+particle%stnr))**(0.5)
 
