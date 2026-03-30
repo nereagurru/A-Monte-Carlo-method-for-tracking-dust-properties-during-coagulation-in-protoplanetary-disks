@@ -35,7 +35,9 @@ module timestep
 #endif
          enddo
       enddo
-
+#ifdef MULTI_COMPONENT
+      final_dtime = min(final_dtime, 1.*year) ! to resolve outburs-like event
+#endif
       return
    end subroutine time_step
 
