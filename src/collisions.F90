@@ -14,14 +14,12 @@ module collisions
 #else
    use parameters, only: matdens, con1, con2, tolerance
 #endif
-#ifdef EROSION
-   use parameters, only: erosion_mass_ratio
-#endif
+
    use types,      only: swarm, list_of_swarms
    use hdf5
    use hdf5output, only: hdf5_file_write, hdf5_file_t
 #ifdef KERNEL_TEST
-use parameters, only: repeat, path, datadir
+   use parameters, only: repeat, path, datadir
 #endif
    implicit none
 
@@ -38,7 +36,240 @@ use parameters, only: repeat, path, datadir
 
    contains
 
-#ifdef KERNEL_TEST
+#if !defined(KERNEL_TEST)
+
+#ifdef MULTI_COMPONENT
+   ! the routine performes collisional evolution on swarms located in the cell nr,ni with the aid of the MC algorithm
+   subroutine mc_collisions(nr, ni, bin, swrm, dtime, realtime, kk, first_idx, &
+                           & colrates, accelncol, relvels, stokesnr, vs, vr, colrates_rp, &
+                           & ij_back, recalculate)
+      implicit none
+      type(swarm), dimension(:), allocatable, target            :: swrm
+      type(list_of_swarms), dimension(:,:), allocatable, target :: bin
+      type(swarm), dimension(:), pointer              :: swarms      ! local rps array
+      integer, intent(in)                             :: nr, ni      ! indices of the cell
+      real, intent(in)                                :: dtime       ! time step
+      real, intent(in)                                :: realtime    ! physical time
+      integer, intent(in)                             :: first_idx   ! first index of swrm in rbin
+      integer                                         :: nsws        ! number of representative particles in given cell
+      integer                                         :: nri, nrk    ! indices of physical and representative particles choosen to the next collision
+      real, dimension(:), allocatable                 :: colrates    ! collision rates matrix
+      real, dimension(:), allocatable                 :: colrates_rp
+      real, dimension(:), allocatable                 :: relvels     ! relative velocities matrix
+      real, dimension(:), allocatable                 :: accelncol   ! coagulation acceleration matrix (in the case of high mass ratio,
+                                                                     ! instead of performing every collision separately, we group the collisions)
+      real, dimension(:), allocatable                 :: stokesnr    ! stokes numbers of particles
+      real, dimension(:), allocatable                 :: vs, vr      ! vertical settilng and radial drift velocities
+      real                                            :: local_time, dt ! physical time spent in the cell, time step between two collisions
+      real                                            :: rand        ! random number
+      real                                            :: totr        ! total collision rate
+      real                                            :: vn          ! maximum radial velocity from the pressure gradient
+      real                                            :: Reynolds, v0, Vg2, veta, tL, teta ! relative velocities stuff
+      real                                            :: lmfp, gasdens ! mean free path, gas density
+      integer                                         :: i, k, j, l, ij, Ncol, j_loop, idnr, imax
+      integer, dimension(:,:), allocatable            :: ij_back
+      integer, intent(out)                            :: kk ! collisions counter
+      real                                            :: Kepler_freq, cs_speed
+      logical :: recalculate
+      real :: deltar, deltaz   ! radial and vertical size of grid (for adaptative dmmax)
+      real :: weightw, weightk
+      real :: r, mmax
+      real :: mean_mswarm
+      integer :: w
+      real:: rpos, zpos ! this is needed to avoid particles ending up in the same position during merging
+
+
+      deltar = g%rup(nr) - g%rlo(nr)
+      deltaz = g%zup(nr,ni) - g%zlo(nr,ni)
+
+
+      ! calculation of some values needed for calculations
+      gasdens = densg(g%rce(nr),g%zce(nr,ni),realtime)         ! gas density in the center of cell
+      lmfp = mH2 / ( gasdens * AH2 )                           ! mean free path in gas in the center of cell
+      Kepler_freq = omegaK(g%rce(nr))                          ! keplerian frequency at the radial centre of cell
+      cs_speed = cs(g%rce(nr))
+      Reynolds = sqrt(0.5 * pi) * alpha(g%rce(nr)) * cs_speed / (Kepler_freq * lmfp) ! Reynolds number
+      v0 = sqrt(alpha(g%rce(nr))) * cs_speed                                 ! velocity of the largest eddy
+      veta = v0 * Reynolds**(-0.25)                                               ! velocity of the smallest eddy
+      tL = 1. / Kepler_freq
+      teta = Reynolds**(-0.5) * tL                                                ! overturn time of the smallest eddy
+      vn = 0.25 * (Pg(g%rce(nr)+1., g%zce(nr,ni),realtime) - Pg(g%rce(nr)-1., g%zce(nr,ni), realtime)) / &  ! maximum radial velocity from the pressure gradient
+               gasdens / Kepler_freq
+      Vg2 = 1.5 *v0**2.0                                                          ! turbulent velocity of gas squared
+
+      !-------------------------------------------------------------------------------------
+
+      swarms => swrm      ! points to the swarms array that contains only swarms located in the current cell nr,ni
+      swarms(:)%coll_f = 0         ! setting collision flag to zero, will be updated to 1 if collisions happen
+      nsws = size(swarms)          ! number of swarms in the current cell
+
+      mean_mswarm = sum(swarms(:)%mswarm*(1.+swarms(:)%w))/nsws
+
+      Ncol = nsws*(nsws+1)/2       ! number of all potential collisions
+
+      if (recalculate) then
+         ! calculates initial Stokes number for particles and their settling and radial drift velocities
+         do i = 1, nsws
+            call stokes_nr_centr(i, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
+            call vel_vs_centr(nr, ni, i, stokesnr, Kepler_freq, vs)
+            call vel_rd_centr(nr, i, stokesnr, vr, vn, realtime)
+         enddo
+
+         colrates_rp(:) = 0.
+
+         ! calculates relative velocities and collision rates matrix
+         do ij = 1, Ncol
+            i = ij_back(ij,1)
+            j = ij_back(ij,2)
+            call rel_vels(i, j, swarms, stokesnr, vr, vs, relvels(ij), vn, Reynolds, veta, &
+                        & Vg2, tL, teta, Kepler_freq, cs_speed)
+            call col_rates(i, j, swarms, relvels(ij), colrates(ij), accelncol(ij), g%vol(nr,ni), deltar, deltaz)
+            colrates_rp(i) = colrates_rp(i) + colrates(ij)
+         enddo
+         recalculate = .False.
+      end if
+      !------------ MAIN COLLISIONS LOOP ----------------------------------------------------
+      local_time = 0.0
+      kk = 0
+      do while (local_time < dtime)
+         totr = sum(colrates_rp)                 ! total collision rate
+         call random_number(rand)
+
+         dt = -1. * log(rand) / totr       ! time step between this and the next collision
+
+         if (dt > dtime) then ! 0 or 1 collisions, decided by a random number
+            call random_number(rand)
+            if (rand> dtime/dt) then
+               local_time = dtime
+               cycle
+            endif
+         endif
+         local_time = local_time + dt      ! update of the local time
+         call choose_swarms(nri, nrk, swarms, colrates_rp, colrates, totr)
+         ! nri saves the one with lowest npar, so the one that gains mass during sticking
+
+         call collision(nri, nrk, swarms, relvels, accelncol)
+
+         ! if one of them got emptied, refill it; nri cannot get emptied
+         if (swarms(nrk)%mswarm*(1.+swarms(nrk)%w) <= mean_mswarm*tolerance) then
+
+            if (swarms(nrk)%mswarm > 0.) then ! if lower, simply empty
+
+               ! find most similar particle w to nrk
+               ! merge (not collide, compute average)
+               w =   minloc((swarms(:)%mass*swarms(:)%fw-swarms(nrk)%mass*swarms(nrk)%fw)**2. + & 
+                           & (swarms(:)%mass*(1.-swarms(:)%fw)-swarms(nrk)%mass*(1.-swarms(nrk)%fw))**2., & 
+                           & dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
+               weightw = 1./(1.+swarms(nrk)%mswarm/swarms(w)%mswarm*(1.+swarms(nrk)%w)/(1.+swarms(w)%w))
+               weightk = 1./(1.+swarms(w)%mswarm/swarms(nrk)%mswarm*(1.+swarms(w)%w)/(1.+swarms(nrk)%w))
+               swarms(w)%npar = swarms(w)%npar + swarms(nrk)%npar
+
+               ! multicomponent is 0D so we do not update position
+               swarms(w)%fw = swarms(w)%fw*weightw + swarms(nrk)%fw*weightk
+               swarms(w)%w = swarms(w)%fw/(1.-swarms(w)%fw)
+               swarms(w)%rhoi = 1. / ( (swarms(w)%fw/matdensw) + ((1.-swarms(w)%fw)/matdenssi))
+               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm 
+               swarms(w)%mass = swarms(w)%mswarm*(1.+swarms(w)%w)/swarms(w)%npar
+
+
+               swarms(w)%coll_f =  1 ! otherwise it won't get updated
+               swarms(nrk)%mswarm = 0.
+               swarms(nrk)%npar = 0.
+               ! update w group
+               call stokes_nr_centr(w, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
+               call vel_vs_centr(nr, ni, w, stokesnr, Kepler_freq, vs)
+               call vel_rd_centr(nr, w, stokesnr, vr, vn, realtime)
+
+               do j_loop=1, nsws
+                  i = min(w, j_loop)
+                  j = max(w, j_loop)
+                  ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
+                  call rel_vels(i, j, swarms, stokesnr, vr, vs, relvels(ij), vn, Reynolds, veta, &
+                              & Vg2, tL, teta, Kepler_freq, cs_speed)
+
+                  colrates_rp(i) = colrates_rp(i) - colrates(ij)
+                  call col_rates(i, j, swarms, relvels(ij), colrates(ij), accelncol(ij), g%vol(nr,ni), deltar, deltaz)
+                  colrates_rp(i) = colrates_rp(i) + colrates(ij)
+               enddo
+            endif
+
+
+            ! find the right group to split with the maximum total mass
+            imax = maxloc(swarms(:)%mswarm*(1.+swarms(:)%w), dim=1, mask=swarms(:)%npar >= 2.0)
+
+
+            swarms(imax)%coll_f =  1
+            idnr = swarms(nrk)%idnr
+            swarms(imax)%npar = swarms(imax)%npar/2.
+            swarms(imax)%mswarm = swarms(imax)%mswarm/2.
+            ! copy i in k
+
+            rpos = swarms(nrk)%rdis
+            zpos = swarms(nrk)%zdis
+
+            swarms(nrk) = swarms(imax) 
+            swarms(nrk)%idnr = idnr
+
+            swarms(nrk)%rdis = rpos
+            swarms(nrk)%zdis = zpos
+
+            ! then we need to calculate all properties but if this was the case we could do it once. To do
+            call stokes_nr_centr(imax, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
+            call vel_vs_centr(nr, ni, imax, stokesnr, Kepler_freq, vs)
+            call vel_rd_centr(nr, imax, stokesnr, vr, vn, realtime)
+
+            do j_loop=1, nsws
+               i = min(imax, j_loop)
+               j = max(imax, j_loop)
+               ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
+               call rel_vels(i, j, swarms, stokesnr, vr, vs, relvels(ij), vn, Reynolds, veta, &
+                           & Vg2, tL, teta, Kepler_freq, cs_speed)
+
+               colrates_rp(i) = colrates_rp(i) - colrates(ij)
+               call col_rates(i, j, swarms, relvels(ij), colrates(ij), accelncol(ij), g%vol(nr,ni), deltar, deltaz)
+               colrates_rp(i) = colrates_rp(i) + colrates(ij)
+            enddo
+         endif
+
+         call stokes_nr_centr(nri, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
+         call stokes_nr_centr(nrk, swarms, stokesnr, lmfp, gasdens, Kepler_freq, cs_speed)
+         call vel_vs_centr(nr, ni, nri, stokesnr, Kepler_freq, vs)
+         call vel_vs_centr(nr, ni, nrk, stokesnr, Kepler_freq, vs)
+         call vel_rd_centr(nr, nri, stokesnr, vr, vn, realtime)
+         call vel_rd_centr(nr, nrk, stokesnr, vr, vn, realtime)
+         do j_loop=1, nsws
+            i = min(nri, j_loop)
+            j = max(nri, j_loop)
+            ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
+            call rel_vels(i, j, swarms, stokesnr, vr, vs, relvels(ij), vn, Reynolds, veta, &
+                        & Vg2, tL, teta, Kepler_freq, cs_speed)
+
+            colrates_rp(i) = colrates_rp(i) - colrates(ij)
+            call col_rates(i, j, swarms, relvels(ij), colrates(ij), accelncol(ij), g%vol(nr,ni), deltar, deltaz)
+            colrates_rp(i) = colrates_rp(i) + colrates(ij)
+         enddo
+
+         do j_loop=1, nsws
+            i = min(nrk, j_loop)
+            j = max(nrk, j_loop)
+            ij =  (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
+            call rel_vels(i, j, swarms, stokesnr, vr, vs, relvels(ij), vn, Reynolds, veta, &
+                        & Vg2, tL, teta, Kepler_freq, cs_speed)
+            colrates_rp(i) = colrates_rp(i) - colrates(ij)
+            call col_rates(i, j, swarms, relvels(ij), colrates(ij), accelncol(ij), g%vol(nr,ni), deltar, deltaz)
+            colrates_rp(i) = colrates_rp(i) + colrates(ij)
+         enddo
+
+         kk = kk + 1
+      enddo
+      !-------------------------------------------------------------------------------------
+
+      nullify(swarms)
+
+      return
+   end subroutine mc_collisions
+
+
 #else
    ! the routine performes collisional evolution on swarms located in the cell nr,ni with the aid of the MC algorithm
    subroutine mc_collisions(nr, ni, bin, swrm, dtime, realtime, kk, first_idx)
@@ -70,15 +301,11 @@ use parameters, only: repeat, path, datadir
       integer, intent(out)                            :: kk ! collisions counter
       real                                            :: Kepler_freq, cs_speed
       real :: deltar, deltaz   ! radial and vertical size of grid (for adaptative dmmax)
-      real :: mass_variation = 0. !0.01
-      real :: weightw, weightk
       real :: r, mmax
       real :: mean_mswarm
-      integer, allocatable :: idx(:)
       integer :: w
-!#ifdef MULTI_COMPONENT
       real:: rpos, zpos ! this is needed to avoid particles ending up in the same position during merging
-!#endif
+
 
       deltar = g%rup(nr) - g%rlo(nr)
       deltaz = g%zup(nr,ni) - g%zlo(nr,ni)
@@ -103,11 +330,9 @@ use parameters, only: repeat, path, datadir
       swarms => bin(nr,ni)%p       ! points to the swarms array that contains only swarms located in the current cell nr,ni
       swarms(:)%coll_f = 0         ! setting collision flag to zero, will be updated to 1 if collisions happen
       nsws = size(swarms)          ! number of swarms in the current cell
-#ifdef MULTI_COMPONENT
-      mean_mswarm = sum(swarms(:)%mswarm*(1.+swarms(:)%w))/nsws
-#else
+
       mean_mswarm = sum(swarms(:)%mswarm)/nsws
-#endif
+
       Ncol = nsws*(nsws+1)/2       ! number of all potential collisions
       allocate (colrates(Ncol), accelncol(Ncol), relvels(Ncol), ij_back(Ncol, 2))
       allocate (stokesnr(nsws), vs(nsws), vr(nsws), colrates_rp(nsws))
@@ -146,7 +371,6 @@ use parameters, only: repeat, path, datadir
          call random_number(rand)
 
          dt = -1. * log(rand) / totr       ! time step between this and the next collision
-         !write(*,*) 'dt vs. dtime ', dt/year, dtime/year, maxval(colrates), minval(colrates)
 
          if (dt > dtime) then ! 0 or 1 collisions, decided by a random number
             call random_number(rand)
@@ -158,38 +382,22 @@ use parameters, only: repeat, path, datadir
          local_time = local_time + dt      ! update of the local time
          call choose_swarms(nri, nrk, swarms, colrates_rp, colrates, totr)
          ! nri saves the one with lowest npar, so the one that gains mass during sticking
+
          call collision(nri, nrk, swarms, relvels, accelncol)
 
          ! if one of them got emptied, refill it; nri cannot get emptied
-#ifdef MULTI_COMPONENT
-         if (swarms(nrk)%mswarm*(1.+swarms(nrk)%w) < mean_mswarm*tolerance) then
-#else
-         if (swarms(nrk)%mswarm < mean_mswarm*tolerance) then
-#endif
+         if (swarms(nrk)%mswarm <= mean_mswarm*tolerance) then
             if (swarms(nrk)%mswarm > 0.) then ! if lower, simply empty
 
-               ! find most similar particle to nrk
-               w = minloc(abs(swarms(:)%mass-swarms(nrk)%mass), dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
+               ! find most similar particle w to nrk
                ! merge (not collide, compute average)
-#ifdef MULTI_COMPONENT
-               weightw = 1./(1.+swarms(nrk)%mswarm/swarms(w)%mswarm*(1.+swarms(nrk)%w)/(1.+swarms(w)%w))
-               weightk = 1./(1.+swarms(w)%mswarm/swarms(nrk)%mswarm*(1.+swarms(w)%w)/(1.+swarms(nrk)%w))
-#else
-               weightw = 1./(1.+swarms(nrk)%mswarm/swarms(w)%mswarm)
-               weightk = 1./(1.+swarms(w)%mswarm/swarms(nrk)%mswarm)
-#endif
+               w = minloc(abs(swarms(:)%mass-swarms(nrk)%mass), & 
+                        & dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
+
                swarms(w)%npar = swarms(w)%npar + swarms(nrk)%npar
-#ifdef MULTI_COMPONENT
-               swarms(w)%fw = swarms(w)%fw*weightw + swarms(nrk)%fw*weightk
-               swarms(w)%w = swarms(w)%fw/(1.-swarms(w)%fw)
-               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm 
-               swarms(w)%mass = swarms(w)%mswarm*(1.+swarms(w)%w)/swarms(w)%npar
-#else
-               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm
+               swarms(w)%mswarm = swarms(w)%mswarm+swarms(nrk)%mswarm ! this is not best practise, because they are large numbers
                swarms(w)%mass = swarms(w)%mswarm/swarms(w)%npar
 
-               
-#endif
                
                swarms(w)%coll_f =  1 ! otherwise it won't get updated
                swarms(nrk)%mswarm = 0.
@@ -200,7 +408,6 @@ use parameters, only: repeat, path, datadir
                call vel_rd_centr(nr, w, stokesnr, vr, vn, realtime)
 
                do j_loop=1, nsws
-                  !if (imax == j_loop) cycle
                   i = min(w, j_loop)
                   j = max(w, j_loop)
                   ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -214,29 +421,21 @@ use parameters, only: repeat, path, datadir
             endif
 
 
-            ! find the right group to split: within the 90% from the total mass
-#ifdef MULTI_COMPONENT
-            mmax = maxval(swarms(:)%mswarm*(1.+swarms(:)%w), mask = swarms(:)%npar >= 2.0)
-            idx  = pack([(i, i=1,size(swarms))],(swarms(:)%mswarm*(1.+swarms(:)%w) >= 0.9*mmax) .and. (swarms(:)%npar >= 2.))
-
-#else
-            mmax = maxval(swarms(:)%mswarm, mask = swarms(:)%npar >= 2.0)
-            idx  = pack([(i, i=1,size(swarms))],(swarms(:)%mswarm >= 0.9*mmax) .and. (swarms(:)%npar >= 2.))
-#endif
-            ! choose randomly one 
-            call random_number(r)
-            imax = idx(1 + int(r*size(idx)))
+            ! find the right group to split with the largest total mass
+            imax = maxloc(swarms(:)%mswarm, dim=1, mask=swarms(:)%npar >= 2.0)
 
             swarms(imax)%coll_f =  1
             idnr = swarms(nrk)%idnr
             swarms(imax)%npar = swarms(imax)%npar/2.
             swarms(imax)%mswarm = swarms(imax)%mswarm/2.
-            
-            ! copy imax in nrk, except position (grid is assumed to be local)
+            ! copy i in k
+
             rpos = swarms(nrk)%rdis
             zpos = swarms(nrk)%zdis
+
             swarms(nrk) = swarms(imax) 
             swarms(nrk)%idnr = idnr
+
             swarms(nrk)%rdis = rpos
             swarms(nrk)%zdis = zpos
 
@@ -246,7 +445,6 @@ use parameters, only: repeat, path, datadir
             call vel_rd_centr(nr, imax, stokesnr, vr, vn, realtime)
 
             do j_loop=1, nsws
-               if (imax == j_loop) cycle
                i = min(imax, j_loop)
                j = max(imax, j_loop)
                ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -266,7 +464,6 @@ use parameters, only: repeat, path, datadir
          call vel_rd_centr(nr, nri, stokesnr, vr, vn, realtime)
          call vel_rd_centr(nr, nrk, stokesnr, vr, vn, realtime)
          do j_loop=1, nsws
-            if (nri == j_loop) cycle
             i = min(nri, j_loop)
             j = max(nri, j_loop)
             ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -279,7 +476,6 @@ use parameters, only: repeat, path, datadir
          enddo
 
          do j_loop=1, nsws
-            if (nrk == j_loop) cycle
             i = min(nrk, j_loop)
             j = max(nrk, j_loop)
             ij =  (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -308,7 +504,7 @@ use parameters, only: repeat, path, datadir
             cycle
          endif   
       enddo
-      !write(*,*) '       swrm updated!'
+
       nullify(swarms)
 
       return
@@ -317,10 +513,8 @@ use parameters, only: repeat, path, datadir
 #endif
 
 
+#else
 
-
-
-#ifdef KERNEL_TEST
    ! the routine performes collisional evolution on swarms located in the cell nr,ni with the aid of the MC algorithm
    subroutine mc_collisions_test(nr, ni, bin, swrm, dtime, realtime, kk, first_idx)
       implicit none
@@ -340,13 +534,11 @@ use parameters, only: repeat, path, datadir
       integer                                         :: i, k, j, l, ij, Ncol, j_loop, idnr, imax
       integer, dimension(:,:), allocatable            :: ij_back
       integer, intent(out)                            :: kk ! collisions counter
-      real :: mass_variation = 0. !0.01
       real, dimension(:), allocatable :: t_arr
       integer :: cont_time
       real :: fin
       type(hdf5_file_t)                                               :: file
       real :: r, mmax
-      integer, allocatable :: idx(:)
       integer :: w, loops
       character(len=100)               :: loops_str
       character(len=100)               :: command
@@ -482,17 +674,18 @@ use parameters, only: repeat, path, datadir
                   endif
                else
                   ! find most similar particle to nrk
-                  w = minloc(abs(swarms(:)%mass-swarms(nrk)%mass), dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
+                  w = minloc(abs(swarms(:)%mass-swarms(nrk)%mass), & 
+                           & dim=1, mask=[(i/= nrk, i = 1, size(swarms))])
                   ! merge (not collide, compute average)
                   swarms(w)%mswarm = swarms(w)%mswarm + swarms(nrk)%mswarm
-                  swarms(w)%npar = swarms(w)%npar  + swarms(nrk)%npar 
+                  swarms(w)%npar = swarms(w)%npar + swarms(nrk)%npar 
                   swarms(w)%mass = swarms(w)%mswarm/swarms(w)%npar
+
                   swarms(w)%coll_f =  1 ! we want this particle to update as well
                   swarms(nrk)%mass = 0.
                   swarms(nrk)%npar = 0.
                   swarms(nrk)%mswarm = 0.
                   do j_loop=1, nsws
-                     !if (imax == j_loop) cycle
                      i = min(w, j_loop)
                      j = max(w, j_loop)
                      ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -504,11 +697,7 @@ use parameters, only: repeat, path, datadir
                endif
 
                ! find the right group to split: within the 90% from the total mass
-               mmax = maxval(swarms(:)%mswarm, mask = swarms(:)%npar >= 2.0)
-               idx  = pack([(i, i=1,size(swarms))],(swarms(:)%mswarm >= 0.9*mmax) .and. (swarms(:)%npar >= 2.))
-               ! choose randomly one 
-               call random_number(r)
-               imax = idx(1 + int(r*size(idx)))
+               imax = maxloc(swarms(:)%mswarm, dim=1, mask=swarms(:)%npar >= 2.0)
 
                swarms(imax)%coll_f =  1 ! we want this particle to update as well
                idnr = swarms(nrk)%idnr
@@ -521,7 +710,6 @@ use parameters, only: repeat, path, datadir
 
 
                do j_loop=1, nsws
-                  !if (imax == j_loop) cycle
                   i = min(imax, j_loop)
                   j = max(imax, j_loop)
                   ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -532,7 +720,6 @@ use parameters, only: repeat, path, datadir
             endif
       
             do j_loop=1, nsws
-               !if (nri == j_loop) cycle
                i = min(nri, j_loop)
                j = max(nri, j_loop)
                ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -542,7 +729,6 @@ use parameters, only: repeat, path, datadir
             enddo
 
             do j_loop=1, nsws
-               !if (nrk == j_loop) cycle
                i = min(nrk, j_loop)
                j = max(nrk, j_loop)
                ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
@@ -563,7 +749,6 @@ use parameters, only: repeat, path, datadir
 
    
 
-      !write(*,*) '      Updating swrm:'            ! TODO: update only the modified swarms
       do k = 1, nsws
          if(swarms(k)%coll_f /= 0) then
             l = FINDLOC(swrm(:)%idnr,swarms(k)%idnr,dim=1)
@@ -572,7 +757,7 @@ use parameters, only: repeat, path, datadir
             cycle
          endif   
       enddo
-      !write(*,*) '       swrm updated!'
+
       deallocate(swarms)
       deallocate(t_arr)
 
@@ -919,21 +1104,15 @@ end subroutine collision
       real                                            :: rvel
       integer :: ij, i, j
       real :: ran
-
+      real :: mass_ratio
       i = min(nri, nrk)
       j = max(nri, nrk)
       ij = (i-1)*size(swarms) - (i-1)*(i-2)/2 + (j - i + 1)!(i-1)*size(swarms) -(i-1)*i/2 + (j-i)
       rvel = relvels(ij)
-
+      mass_ratio = swarms(nri)%mass/swarms(nrk)%mass
       if (rvel < vfrag) then
-         call hit_and_stick(nri,nrk, ij, swarms, accelncol)
-#ifdef EROSION
-      ! this need to be fixed
-      else if (swarms(nri)%mass/swarms(nrk)%mass .ge. erosion_mass_ratio) then
-         call erosion(nri,nrk,swarms,accelncol)
-#endif
-      else ! for comparison with mcdust, I should use the same frag model
-      
+         call hit_and_stick(nri,nrk, ij, swarms, accelncol)         
+      else! for comparison with mcdust, I should use the same frag model
          ! assume they both fragment
          call fragmentation(nri, swarms)
          call random_number(ran)
@@ -995,6 +1174,7 @@ end subroutine collision
          ! ----- update particle 2 -----
          ! mass stays the same
          swarms(nrk)%npar = swarms(nrk)%npar - swarms(nri)%npar*accelncol(ij)
+
          swarms(nrk)%mswarm = swarms(nrk)%mass*swarms(nrk)%npar/(1.+swarms(nrk)%w)
 #else
          swarms(nri)%mass = swarms(nri)%mass + accelncol(ij) * swarms(nrk)%mass
@@ -1028,29 +1208,7 @@ end subroutine collision
       return
    end subroutine fragmentation
 
-#ifdef EROSION
-   !erosion collision as in dustpy
-   !when small aggregate hits large one, it fragments
-   !and big aggregate loses a chunk mass same as target particle
 
-   subroutine erosion(nri, nrk, swarms, accelncol)
-      implicit none
-      integer, intent(in)                             :: nri, nrk
-      type(swarm), dimension(:), pointer              :: swarms
-      real, dimension(:), allocatable                 :: accelncol
-      real                                            :: ran, p
-      
-
-      p = swarms(nrk)%mass/swarms(nri)%mass
-      call random_number(ran)
-      if (ran .ge. p) then
-            swarms(nri)%mass = swarms(nri)%mass - accelncol(nri, nrk) * swarms(nrk)%mass
-      else
-         swarms(nri)%mass = swarms(nrk)%mass
-      endif
-      return
-   end subroutine erosion
-#endif
 
    ! vertical settling velocity
    subroutine vel_vs_centr(nr, ni, i, stokesnr, Kepler_freq, vs)
@@ -1060,9 +1218,7 @@ end subroutine collision
       real, dimension(:), allocatable                 :: vs
       integer, intent(in)                             :: i       ! index of particle
       real, intent (in)                               :: Kepler_freq
-      vs(i) = g%zce(nr,ni) * Kepler_freq * min(stokesnr(i), 0.5) !stokesnr(i) / (1. + stokesnr(i)**2.) 
-      !vs(i) = min(g%zce(nr,ni) * Kepler_freq * stokesnr(i), g%zce(nr,ni) * Kepler_freq) !stokesnr(i) / (1. + stokesnr(i)**2.) 
-
+      vs(i) = g%zce(nr,ni) * Kepler_freq * min(stokesnr(i), 0.5)
       return
    end subroutine vel_vs_centr
 
