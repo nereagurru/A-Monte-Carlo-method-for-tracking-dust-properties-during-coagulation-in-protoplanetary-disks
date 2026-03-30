@@ -50,8 +50,8 @@ rhow, rhos = 1., 3. # densities of water and silicates
 a_th = 0.1 # size threshold in cm
 lw = 10 # line width
 marker_size = 100 
-file_id_list = [900, 1010, 1500] # which snapshots to plot
-path_list = ['../outputs/water2/', '../outputs/water_mcdust/']
+file_id_list = [900, 1010, 1900] # which snapshots to plot
+path_list = ['../outputs/water/', '../outputs/water_mcdust/']
 # get list of default colors in matplotlib
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
