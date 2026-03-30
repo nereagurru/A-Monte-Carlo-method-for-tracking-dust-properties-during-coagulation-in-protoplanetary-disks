@@ -25,7 +25,7 @@ program main
    use parameters,   only: read_parameters, Ntot, nz, nr, dtime, fout, tend, smallr, restart, &
                            maxrad0, r0, db_data, path, dtg
 #ifdef MULTI_COMPONENT
-   use parameters, only: matdensw, matdenssi
+   use parameters, only: matdensw, matdenssi, dtg
    use phase_change
    use discstruct, only: Temp, sigmag
 #else
@@ -57,6 +57,12 @@ program main
 #ifdef MULTI_COMPONENT
    ! related to water
    real :: vapour_mass, rhovap, temper, evap_cond, con_timescale, time_init
+   integer  :: Ncol, nsws
+   real, dimension(:), allocatable :: colrates, accelncol, relvels, stokesnr, vs, vr, colrates_rp
+   integer, dimension(:,:), allocatable :: ij_back
+   logical :: recalculate
+   integer :: ij
+   real :: vol_0D
 #endif
 
    ! random number generator initialization
@@ -86,12 +92,16 @@ program main
 #endif
 #else
 
-      call init_swarms(Ntot,swrm)
+      call init_swarms(Ntot,swrm &
+#ifdef MULTI_COMPONENT
+                        &, vol_0D &
+#endif
+                        &)
 
 #endif
    write(*,*) 'succeed'
 
-   write(*,*) 'Initial disk mass: ', gasmass(0.1*AU,maxrad0*AU,0.0)/Msun
+   !write(*,*) 'Initial disk mass: ', gasmass(0.1*AU,maxrad0*AU,0.0)/Msun
 
    write(*,*) ' Making grid for the first time...'
 
@@ -112,6 +122,20 @@ program main
    ! vapour mass init
      vapour_mass = sum(swrm(:)%mswarm)
      write(*,*) 'Vapour mass is ', vapour_mass
+     nsws = size(swrm) 
+     Ncol = nsws*(nsws+1)/2
+     allocate (colrates(Ncol), accelncol(Ncol), relvels(Ncol), ij_back(Ncol, 2))
+     allocate (stokesnr(nsws), vs(nsws), vr(nsws), colrates_rp(nsws))
+
+     do i=1, nsws
+        do j=i, nsws
+           ij = (i-1)*nsws - (i-1)*(i-2)/2 + (j - i + 1)
+           ij_back(ij,1) = i
+           ij_back(ij,2) = j 
+        enddo
+     enddo
+     recalculate = .True.
+     g%vol(1,1) = vol_0D
 #endif
    iter = 0
    ! ------------------- MAIN LOOP -------------------------------------------------------------------------------------
@@ -152,33 +176,16 @@ program main
       temper = Temp(g%rce(1), time)
       rhovap = mH2O/kB/temper*1.013*10.**6.*exp(15.6-5940./temper)
       evap_cond = (vapour_mass/g%vol(1,1)-rhovap)
-      !write(*,*) 'evap_cond is ', evap_cond
 
-      ! condensation timescale from Ros and Johansen 2013, their equation 12. We assume micrometer-sized silicate monomers
-      con_timescale = sqrt(2.*pi*18./2.3)*matdenssi/sigmag(g%rce(1), time)/dtg/omegaK(g%rce(1))*r0
-      write(*,*) 'condensation timescale is ', con_timescale/year
-      write(*,*) 'Total water content before phase change.... ', vapour_mass + sum(swrm(:)%mswarm*swrm(:)%w)
-      time_init = time
-      if (con_timescale<resdt) then
-         do 
-            if (evap_cond > 0.) then 
-               call condensation(swrm, con_timescale, vapour_mass, rhovap, temper, g%vol(1,1))
-            else if (evap_cond < 0.) then 
-               call sublimation(swrm, con_timescale, vapour_mass, rhovap, temper, g%vol(1,1))
-            endif
-            if (time_init+con_timescale>time+resdt) exit
-            time_init = time_init + con_timescale
-         enddo
+      if (evap_cond > 1e-29) then 
+         call condensation(swrm, resdt, vapour_mass, rhovap, temper, g%vol(1,1))
+         recalculate = .True.
+         write(*,*) 'Condensation! ', evap_cond, rhovap
+      else if (evap_cond < -1e-29) then 
+         call sublimation(swrm, resdt, vapour_mass, rhovap, temper, g%vol(1,1))
+         recalculate = .True.
+         write(*,*) 'Sublimation! ', evap_cond, rhovap
       endif
-
-      if (evap_cond > 0.) then 
-         call condensation(swrm, time+resdt-time_init, vapour_mass, rhovap, temper, g%vol(1,1))
-
-      else if (evap_cond < 0.) then 
-         call sublimation(swrm,  time+resdt-time_init, vapour_mass, rhovap, temper, g%vol(1,1))
-
-      endif
-      write(*,*) 'Total water content after phase change.... ', vapour_mass + sum(swrm(:)%mswarm*swrm(:)%w)
 
 
 #endif
@@ -198,6 +205,8 @@ program main
 
 #ifdef COLLISIONS
       ! removing old grid and building new one
+
+#if !defined(MULTI_COMPONENT)
       call deallocate_grid
       if (allocated(bin))  deallocate(bin)
       if (allocated(rbin)) deallocate(rbin)
@@ -205,14 +214,19 @@ program main
       write(*,*) '    Making grid...'
       call make_grid(swrm, bin, rbin, nr, nz, smallr,totmass, ncolls)
       write(*,*) '     grid done'
+#endif
 
-
-      !write(*,*) 'Initial mass is ', sum(swrm(:)%mswarm)
       !$OMP PARALLEL DO PRIVATE(i,j) SCHEDULE(DYNAMIC)
       do i = 1, size(g%rce)
          do j = 1, size(g%zce,dim=2)
             if (.not.allocated(bin(i, j)%p)) cycle
-            call mc_collisions(i, j, bin, swrm, resdt, time, ncolls(i,j), rbin(i)%first_idx)
+            call mc_collisions(i, j, bin, swrm, resdt, time, ncolls(i,j), rbin(i)%first_idx &
+#ifdef MULTI_COMPONENT
+                              &, colrates, accelncol, relvels, stokesnr, vs, vr, colrates_rp, &
+                              & ij_back, recalculate &
+#endif
+                              &)
+
          enddo
       enddo
       !$OMP END PARALLEL DO
@@ -222,12 +236,17 @@ program main
       close(123)
       write(*,*) '    collisions done!'
 #endif
+
       time = time + resdt
+
 
    enddo
    ! ---- END OF THE MAIN LOOP -----------------------------------------------------------------------------------------
 #endif
-
+#ifdef MULTI_COMPONENT
+   deallocate (colrates, accelncol, relvels, ij_back)
+   deallocate (stokesnr, vs, vr, colrates_rp)
+#endif
    open(23,file=trim(path)//trim('/timesout.dat'),status='unknown',position='append')
    write(23,*) 'time: ', time/year, 'produced output: ',nout
    close(23)
@@ -235,7 +254,7 @@ program main
    call update_St(swrm, time)
    call hdf5_file_write(file, swrm, time, nout, resdt)
 #endif
-   
+   call deallocate_grid
    deallocate(bin)
    deallocate(rbin)
 
