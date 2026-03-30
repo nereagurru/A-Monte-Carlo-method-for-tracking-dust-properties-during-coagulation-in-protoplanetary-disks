@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import glob
 import os as os
 import h5py
-
+from matplotlib.gridspec import GridSpec
 
 """
 l--------- l ------ l ------ l
@@ -26,7 +26,7 @@ l          l        l        l
 l          l   ax5  l   ax6  l
 l--------- l ------ l ------ l
 """
-from matplotlib.gridspec import GridSpec
+
 fig = plt.figure(figsize=(30, 15))
 
 gs = GridSpec(3, 4, figure=fig, width_ratios=[1, 1, 1, 1])  
@@ -139,9 +139,6 @@ ax0.set_ylim(-0.1, 1.1)
 
 
 
-
-
-    #color = ['#609D9B','orange', '#543B87']
 for i, (path, label, ax_list) in enumerate(zip(path_list, ['This work', 'Z&D08'], [[ax1, ax3, ax5], [ax2, ax4, ax6]])):
     all_files = sorted(glob.glob(os.path.join(path, "*.h5")))
     with h5py.File(all_files[0], 'r') as f:
