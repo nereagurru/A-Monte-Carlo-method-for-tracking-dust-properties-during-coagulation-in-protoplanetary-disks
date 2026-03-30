@@ -22,7 +22,7 @@ module timestep
       integer                                        :: i, j, c1=10, c2=1 !c1,c2 - timestep enlargement factors
 
       old_dt = final_dtime
-      final_dtime = max(1.,dtout)
+      final_dtime = max(0.01*year,dtout)
 
       do i = 1, size(ncolls(:,:),dim=1)
         do j = 1, size(ncolls(:,:),dim=2)
@@ -35,7 +35,9 @@ module timestep
 #endif
          enddo
       enddo
-  
+#ifdef MULTI_COMPONENT
+      final_dtime = min(final_dtime, 1.*year) ! to resolve outburs-like event
+#endif
       return
    end subroutine time_step
 
