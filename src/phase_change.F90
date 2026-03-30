@@ -28,15 +28,12 @@ module phase_change
 
       do i=1, size(swrm)
          mwater_remove = dtime*pi*(swrm(i)%mass/swrm(i)%rhoi*3./4./pi)**(2.*third)*vth*(-vapour_mass/vol+rhovap)
-         mwater_remove_fw = min(swrm(i)%mass*swrm(i)%w/(swrm(i)%w+1.) , mwater_remove) ! we cannot remove more water than there is
-
+         mwater_remove_fw = min(swrm(i)%mass*swrm(i)%fw , mwater_remove) ! we cannot remove more water than there is
 
          swrm(i)%w = max(0., swrm(i)%w - (1.+swrm(i)%w)*mwater_remove_fw/swrm(i)%mass)
          swrm(i)%fw = swrm(i)%w/(1.+swrm(i)%w)
          total_mass_loss = total_mass_loss + mwater_remove_fw*swrm(i)%npar
          swrm(i)%mass = swrm(i)%mass - mwater_remove_fw 
-
-         swrm(i)%npar = swrm(i)%mswarm / swrm(i)%mass *(1. + swrm(i)%w)
          swrm(i)%rhoi = f_dens(swrm(i)%w)
          
       enddo
@@ -67,20 +64,19 @@ module phase_change
 
       A_K = pi*vth/vol*total_grain_power! sum(swrm(:)%npar*grain_size(:)**2.)
 
+      write(*,*) "Condensation timescale is ", 1/A_K/year
 
       total_mass_loss = (1.-exp(-A_K*dtime))*(vapour_mass/vol-rhovap)*vol
       vapour_mass = vapour_mass - total_mass_loss
 
       do i=1, size(swrm)
-
          gain_water = total_mass_loss*grain_size(i)**2./total_grain_power ! per particle
          swrm(i)%w = swrm(i)%w + (1. + swrm(i)%w)*gain_water/swrm(i)%mass
          swrm(i)%fw = swrm(i)%w/(1.+swrm(i)%w)
          swrm(i)%mass = swrm(i)%mass + gain_water
-         swrm(i)%npar = swrm(i)%mswarm / swrm(i)%mass *(1.+swrm(i)%w)
          swrm(i)%rhoi = f_dens(swrm(i)%w) 
       enddo
-      !write(*,*) total_mass_loss
+      write(*,*) 'total mass loss', total_mass_loss
 
       deallocate(grain_size)
 
