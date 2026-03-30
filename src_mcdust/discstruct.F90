@@ -30,7 +30,7 @@ module discstruct
          implicit none
          real, intent(in) :: x, time 
          real :: factor
-         real :: period=100.*year, dt=1.*year
+         real :: period=1000.*year, dt=1.*year
          factor = 1.0
       
          ! outburst every period years
@@ -180,6 +180,25 @@ module discstruct
         return
     end function
 
+
+#ifdef MULTI_COMPONENT
+    ! mass of the gas included between xmin and xmax and dz
+    real function gasmass(xmin,xmax,dz_0D, time)
+       use constants, only: pi
+       implicit none
+       real, intent(in)  :: xmin,xmax, dz_0D, time
+       real              :: xmean
+       real              :: dx
+ 
+       dx = (xmax - xmin)
+       xmean = 0.5*(xmax + xmin)
+       gasmass = densg(xmean,0.,time) * 2.*pi*xmean*dx*dz_0D
+ 
+       return
+    end function
+ 
+ 
+#else
     ! mass of the gas included between xmin and xmax
     real function gasmass(xmin,xmax,time)
         use constants, only: pi
@@ -201,4 +220,6 @@ module discstruct
 
         return
     end function
+#endif
+
 end module discstruct
