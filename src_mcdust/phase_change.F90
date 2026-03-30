@@ -3,7 +3,7 @@ module phase_change
 
    use constants,    only: mH2O, kB, pi, year, third, AU
    use types,        only: swarm
-   use initproblem,  only: m0, f_dens, mswarm
+   use initproblem,  only: m0, f_dens
    use discstruct,  only: Temp
    
    implicit none
@@ -27,15 +27,11 @@ module phase_change
 
       do i=1, size(swrm)
          mwater_remove = dtime*pi*(swrm(i)%mass/swrm(i)%rhoi*3./4./pi)**(2.*third)*vth*(-vapour_mass/vol+rhovap)
-         mwater_remove_fw = min(swrm(i)%mass*swrm(i)%w/(swrm(i)%w+1.) , mwater_remove) ! we cannot remove more water than there is
-
-
+         mwater_remove_fw = min(swrm(i)%mass*swrm(i)%fw , mwater_remove) ! we cannot remove more water than there is
          swrm(i)%w = max(0., swrm(i)%w - (1.+swrm(i)%w)*mwater_remove_fw/swrm(i)%mass)
          swrm(i)%fw = swrm(i)%w/(1.+swrm(i)%w)
          total_mass_loss = total_mass_loss + mwater_remove_fw*swrm(i)%npar
          swrm(i)%mass = swrm(i)%mass - mwater_remove_fw 
-
-         swrm(i)%npar = mswarm / swrm(i)%mass *(1. + swrm(i)%w)
          swrm(i)%rhoi = f_dens(swrm(i)%w)
          
       enddo
@@ -76,7 +72,6 @@ module phase_change
          swrm(i)%w = swrm(i)%w + (1. + swrm(i)%w)*gain_water/swrm(i)%mass
          swrm(i)%fw = swrm(i)%w/(1.+swrm(i)%w)
          swrm(i)%mass = swrm(i)%mass + gain_water
-         swrm(i)%npar = mswarm / swrm(i)%mass *(1.+swrm(i)%w)
          swrm(i)%rhoi = f_dens(swrm(i)%w) 
       enddo
       !write(*,*) total_mass_loss
