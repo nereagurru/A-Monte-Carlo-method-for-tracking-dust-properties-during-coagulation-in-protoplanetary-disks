@@ -45,10 +45,10 @@ rlogwalls = np.logspace(np.log10(1.),
 rlogcents = np.sqrt(rlogwalls[1:]*rlogwalls[:-1])
 drlog = rlogwalls[1:]-rlogwalls[:-1]
 
-path_list = ['/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_mcdust/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_X1/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_X2/',
-             '/scratch/gurrutxaga/2DMC/mcdust/outputs/global_disk_X3/']
+path_list = ['../outputs/global_disk_mcdust/',
+             '../outputs/global_disk_X1/',
+             '../outputs/global_disk_X2/',
+             '../outputs/global_disk_X3/']
 
 
 
