@@ -31,8 +31,8 @@ Coauthor
 ## SHARING/ACCESS Code
 
 Data of the paper is available in Zenodo. 
-- doi: 10.5281/zenodo.18673340
-- link: https://zenodo.org/records/18673340
+- doi: 10.5281/zenodo.19390275
+- link: https://zenodo.org/records/19390275
 
 ## FILE OVERVIEW
 
