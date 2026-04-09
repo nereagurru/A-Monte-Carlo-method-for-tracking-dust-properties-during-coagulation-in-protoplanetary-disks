@@ -8,8 +8,8 @@ Created on Mon Feb 16 20:44:21 2026
 
 
 # script to reproduce Figures 2 and 3 in the paper
-# fig 3, high_res=True
-# fig 4, high_res=False
+# fig 2, high_res=True
+# fig 3, high_res=False
 
 import numpy as np
 from scipy.special import gammaln
